@@ -1,0 +1,408 @@
+---
+title: "Porównanie metod partycyjnych i hierarchicznych w wykrywaniu struktur grupowych"
+author: "Mateusz Skuza"
+date: "2025-06-16"
+output: 
+  pdf_document:
+    toc: true
+    number_sections: true
+    latex_engine: xelatex
+    keep_tex: true
+    dev: "cairo_pdf"
+lang: "pl"
+header-includes:
+   - \usepackage{placeins}
+   - \usepackage{graphicx}
+   - \usepackage{float}
+   - \usepackage{polyglossia}
+   - \setdefaultlanguage{polish}
+   - \renewcommand{\contentsname}{Spis treści}
+   - \usepackage{float}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, fig.width = 8, cache=TRUE, echo = FALSE) 
+``` 
+
+\newpage
+
+
+# Wprowadzenie
+
+Celem zadania jest zastosowanie poznanych algorytmów analizy skupień oraz ocena i porównanie jakości grupowania. 
+
+# Wybór i przygotowanie danych
+
+Do analizy został wybrany zbiór **PimaIndiansDiabetes2**, z  biblioteki `mlbench`. Aby ułatwić wizualizację wyników, zostanie wylosowany podzbiór zawierający 200 rekordów. Przed zastosowaniem metod analizy skupień usuwamy zmienną grupującą zawierającą etykietki klas. 
+
+```{r, echo=FALSE, cache=TRUE, results='ver,batim', message=FALSE}
+library(mlbench)
+library(VIM)
+data("PimaIndiansDiabetes2")
+dane_NA<-PimaIndiansDiabetes2
+dane <- kNN(dane_NA, k = 3, imp_var = FALSE)
+liczba_danych <- nrow(dane)
+indeksy_losowy_zbior <- sample(1:liczba_danych, 200)
+dane <- dane[indeksy_losowy_zbior, ]
+wybrane_dane <- setdiff(colnames(dane), "diabetes")
+dane_bez_klas <- dane[, wybrane_dane]
+```
+
+```{r, echo=FALSE, cache=TRUE, results='ver,batim', message=FALSE}
+boxplot(dane_bez_klas, las = 2, col = "lightblue", 
+        main = "Wykresy pudełkowe cech przed standaryzacją")
+```
+
+Przed wyznaczeniem macierzy odległości należy dokonać standaryzacji danych, ponieważ zmienne w zbiorze danych mają różne jednostki i skale.
+
+```{r, echo=FALSE, cache=TRUE, results='ver,batim', message=FALSE}
+dane_stand <- scale(dane_bez_klas)
+boxplot(dane_stand, las = 2, col = "lightblue", 
+        main = "Wykresy pudełkowe cech po standaryzacji")
+```
+
+* **Macierz odmienności** 
+
+Macierz odmienności dla naszego zbioru wygląda następująco: 
+
+```{r, echo=FALSE, cache=TRUE, results='ver,batim', message=FALSE}
+library(factoextra)
+library(cluster)
+dane_stand.MacNiepodob <- daisy(dane_stand)
+dane_stand.MacNiepodob.matrix <- as.matrix(dane_stand.MacNiepodob)
+fviz_dist(dane_stand.MacNiepodob, order = TRUE)
+```
+\newpage
+
+# Wizualizacja wyników grupowania 
+
+Analiza skupień zostanie przeprowadzona przy użyciu dwóch metod  - metody grupującej oraz metody hierarchicznej. Metodą grupującą bedzię Algorytm PAM, natomiast metodą hierarchiczną - algorytm AGNES.
+
+* **Metoda grupująca - Algorytm PAM**
+
+Algorytm PAM (Partitioning Around Medoids) grupuje dane, wybierając rzeczywiste punkty danych (medoidy) jako centra klastrów, minimalizując sumę odległości między punktami a ich medoidami. Działa iteracyjnie, zamieniając medoidy z innymi punktami, jeśli prowadzi to do poprawy jakości klasteryzacji.
+
+Wyniki grupowania przy użyciu algorytmu PAM zostały przedstawione na wykresie poniżej, na którym kolor oznacza rodzaj skupienia, natomiast kształt oznacza przynależność do klas. Wykres powstał poprzez redukcję wymiaru na bazie MDS.
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+dane.pam2 <- pam(dane_stand.MacNiepodob, diss=TRUE, k=2)
+etykietki.pam2 <- dane.pam2$clustering
+dane.MDS <- cmdscale(d=dane_stand.MacNiepodob, k=2)
+pch_klasy <- as.numeric(dane$diabetes)
+plot(dane.MDS[,1], dane.MDS[,2], col = etykietki.pam2, pch = pch_klasy,xlab = "Wymiar 1", ylab = "Wymiar 2", main = "Dane PimaIndiansDiabetes2 - wizualizacja wyników analizy skupień \n Algorytm PAM")
+
+legend("bottomleft", legend = levels(dane$diabetes), pch = 1:length(levels(dane$diabetes)), title = "Rzeczywiste klasy")
+legend("bottomright", legend = paste("Klaster", 1:2), col = 1:2, pch = 16, title = "Przynależność do klastrów")
+
+```
+
+
+* **Metoda hierarchiczna - Algorytm ANGES** 
+
+Algorytm AGNES (Agglomerative Nesting) to podejście hierarchiczne, które rozpoczyna od traktowania każdego obiektu jako osobnego klastra, a następnie iteracyjnie łączy najbliższe klastry według wybranej metryki. 
+
+Zostały użyte trzy metody łączenia skupień: 
+
+* `average` - metoda średniego wiązania
+* `single` - metoda pojedynczego wiązania
+* `complete` - metoda pełnego wiązania
+
+Wyniki grupowania przy użyciu algorytmu PAM zostały przedstawione na wykresach poniżej , na których kolor oznacza rodzaj skupienia, natomiast kształt oznacza przynależność do klas. Wykresy powstały poprzez redukcję wymiaru na bazie PCA.
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+library(gridExtra)
+library(grid)
+
+dane.agnes.avg <- agnes(x=dane_stand.MacNiepodob, diss=TRUE, method="average")
+dane.agnes.single <- agnes(x=dane_stand.MacNiepodob,diss=TRUE, method="single")
+dane.agnes.complete <- agnes(x=dane_stand.MacNiepodob, diss=TRUE, method="complete")
+
+dane.agnes.avg.k2 <- cutree(dane.agnes.avg, k=2)
+dane.agnes.single.k2 <- cutree(dane.agnes.single, k=2)
+dane.agnes.complete.k2 <- cutree(dane.agnes.complete, k=2)
+
+fviz_cluster(list(data=dane_stand, cluster=dane.agnes.avg.k2), main="Dane PimaIndiansDiabetes2 - wizualizacja wyników analizy skupień \nAlgorytm AGNES - metoda Average linkage") + theme_minimal()
+
+  
+fviz_cluster(list(data=dane_stand, cluster=dane.agnes.single.k2), main="Dane PimaIndiansDiabetes2 - wizualizacja wyników analizy skupień \nAlgorytm AGNES - metoda Single linkage")  + theme_minimal()
+
+fviz_cluster(list(data=dane_stand, cluster=dane.agnes.complete.k2), main="Dane PimaIndiansDiabetes2 - wizualizacja wyników analizy skupień \nAlgorytm AGNES - metoda Complete linkage" )  + theme_minimal()
+
+dend_avg <- fviz_dend(dane.agnes.avg, k=2, main="Average linkage")
+dend_single <- fviz_dend(dane.agnes.single, k=2, main="Single linkage")
+dend_complete <- fviz_dend(dane.agnes.complete, k=2, main ="Complete linkage") 
+
+grid.arrange(textGrob("Dendrogramy dla różnych metod łączenia skupień", , gp=gpar(fontsize=16, fontface="bold")), arrangeGrob(dend_avg, dend_single, dend_complete, ncol=3),
+  heights=c(0.1, 1))
+```
+
+Na podstawie wykresów można zauważyć, że klaster 1 i 2 (zarówno dla PAM, jak i AGNES) są względnie separowalne, choć zachodzą na siebie. Metoda PAM generuje bardziej zwarte i lepiej rozdzielone klastry. W przypadku AGNES, metoda complete linkage daje najbardziej czytelny podział, natomiast single linkage tworzy wydłużone i mniej zwarte skupienia, co wskazuje na niższą jakość klasteryzacji. Wyniki grupowania są częściowo zgodne z rzeczywistą przynależnością obiektów do klas. Najlepsze dopasowanie uzyskano dla algorytmu PAM, który lepiej odwzorowuje podział na klasy niż algorytm AGNES. Pomimo tego, że nie wszystkie punkty są poprawnie przypisane, obserwujemy wyraźną strukturę skupień odpowiadającą rozkładowi danych.
+
+
+# Ocena jakości grupowania
+
+Aby dokładnie rozstrzygnąć, który algorytm lepiej poradził sobie z grupowaniem danych oraz jaka liczba klastrów jest optymalna, została obliczona średnia wartość indeksu *silhouette* dla różnych algorytmów analizy skupień, a następnie porównano wyniki grupowania z rzeczywistą przynależnością do klas przy użyciu funkcji `matchClasses()`.
+
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+K.zakres <- 2:10
+sil.pam <- numeric(length(K.zakres))
+sil.agnes.avg <- numeric(length(K.zakres))
+sil.agnes.single <- numeric(length(K.zakres))
+sil.agnes.complete <- numeric(length(K.zakres))
+
+for (i in seq_along(K.zakres)) {
+  k <- K.zakres[i]
+  
+  dane.pamk <- pam(dane_stand.MacNiepodob, diss = TRUE, k = k)
+  dane.agnes.avg.kk <- cutree(dane.agnes.avg, k = k)
+  dane.agnes.single.kk <- cutree(dane.agnes.single, k = k)
+  dane.agnes.complete.kk <- cutree(dane.agnes.complete, k = k)
+  
+  sil.pam[i] <- mean(silhouette(dane.pamk$clustering, dane_stand.MacNiepodob)[, 3])
+  sil.agnes.avg[i] <- mean(silhouette(dane.agnes.avg.kk, dane_stand.MacNiepodob)[, 3])
+  sil.agnes.single[i] <- mean(silhouette(dane.agnes.single.kk, dane_stand.MacNiepodob)[, 3])
+  sil.agnes.complete[i] <- mean(silhouette(dane.agnes.complete.kk, dane_stand.MacNiepodob)[, 3])
+}
+
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+library(knitr)
+library(kableExtra)
+
+silhouette_table <- data.frame(
+  K = K.zakres,
+  PAM = sil.pam,
+  AGNES_Average = sil.agnes.avg,
+  AGNES_Single = sil.agnes.single,
+  AGNES_Complete = sil.agnes.complete
+)
+
+silhouette_table %>%
+  kbl(caption = "Porównanie średniej wartości indeksu silhouette dla różnych algorytmów analizy skupień",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+plot(K.zakres, sil.pam, type = "b", col = "blue", pch = 19,
+     ylim = range(c(sil.pam, sil.agnes.avg, sil.agnes.single, sil.agnes.complete)),
+     xlab = "Liczba klastrów (K)", ylab = "Średni indeks silhouette",
+     main = "Porównanie średniej wartości indeksu silhouette\ndla różnych algorytmów analizy skupień")
+lines(K.zakres, sil.agnes.avg, type = "b", col = "red", pch = 17)
+lines(K.zakres, sil.agnes.single, type = "b", col = "green", pch = 15)
+lines(K.zakres, sil.agnes.complete, type = "b", col = "purple", pch = 18)
+legend("topright", legend = c("PAM", "AGNES average", "AGNES single", "AGNES complete"),
+       col = c("blue", "red", "green", "purple"), pch = c(19, 17, 15, 18))
+grid()
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+library(cluster)
+library(e1071)
+
+K.max <- 10
+
+partition.agreement_avg <- numeric(K.max)
+partition.agreement_single <- numeric(K.max)
+partition.agreement_complete <- numeric(K.max)
+
+for (K in 2:K.max) {
+   
+  dane.pamk <- pam(dane_stand.MacNiepodob, diss = TRUE, k = K)
+  dane.agnes.avg.kk <- cutree(dane.agnes.avg, k = K)
+  dane.agnes.single.kk <- cutree(dane.agnes.single, k = K)
+  dane.agnes.complete.kk <- cutree(dane.agnes.complete, k = K)
+  pam_clusters <- dane.pamk$clustering
+
+
+  partition.agreement_avg[K] <- compareMatchedClasses(dane.agnes.avg.kk, pam_clusters, method = "exact")$diag
+  partition.agreement_single[K] <- compareMatchedClasses(dane.agnes.single.kk, pam_clusters, method = "exact")$diag
+  partition.agreement_complete[K] <- compareMatchedClasses(dane.agnes.complete.kk, pam_clusters, method = "exact")$diag
+}
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+wyniki_zgodnosci <- data.frame(
+  K = 2:K.max,
+  Average_Linkage = partition.agreement_avg[2:K.max],
+  Single_Linkage = partition.agreement_single[2:K.max],
+  Complete_Linkage = partition.agreement_complete[2:K.max]
+) 
+
+wyniki_zgodnosci %>%
+  kbl(caption = "Zgodność partycji dla  różnych metod algorytmu AGNES",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+plot(2:K.max, partition.agreement_avg[-1], type = "b", pch = 16, col = "blue",
+     ylim = c(0, 1), xlab = "Liczba klastrów (K)", ylab = "Zgodność partycji (diag)",
+     main = "Zgodność partycji dla algorytmu PAM i różnych metod algorytmu AGNES")
+lines(2:K.max, partition.agreement_single[-1], type = "b", pch = 17, col = "red")
+lines(2:K.max, partition.agreement_complete[-1], type = "b", pch = 15, col = "green")
+
+legend("topright", legend = c("AGNES average", "AGNES single", "AGNES complete"),
+       col = c("blue", "red", "green"), pch = c(16, 17, 15), lty = 1)
+
+grid()
+
+```
+
+
+Na podstawie powyższych tabel i wykresów można zauważyć, że Algorytm PAM osiągnął lepsze wyniki grupowania niż AGNES, dzięki wyższej wartości indeksu silhouette i lepszemu dopasowaniu do rzeczywistych klas. W metodzie AGNES najlepiej sprawdziło się *complete linkage*, podczas gdy *single linkage* dało najsłabsze rezultaty. Optymalna liczba klastrów to 2, zapewnia ona dobrą separowalność i spójność skupień. 
+
+\newpage
+
+# Interpretacja wyników grupowania - charakterystyki skupień
+
+W celu zbadania charakterystyki obiektów należących do poszczególnych skupień obliczono średnie wartości cech dla skupień wyznaczonych przez algorytm PAM oraz algorytm AGNES. Dodatkowo, sporządzono wykresy pudełkowe dla każdego skupienia, w celu wizualnej analizy różnic między nimi.
+
+* **Średnie wartości cech**
+
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+library(dplyr)
+dane_klastry_pam <- as.data.frame(dane_stand)
+dane_klastry_pam$klaster <- as.factor(etykietki.pam2)
+
+dane_klastry_pam %>%
+  group_by(klaster) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>%
+  kbl(caption = "Średnie wartości cech dla obiektów należących do poszczególnych skupień wyznaczonych przez Algorytm PAM",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+library(dplyr)
+dane_klastry_average <- as.data.frame(dane_stand)
+dane_klastry_average$klaster <- as.factor(dane.agnes.avg.k2)
+
+dane_klastry_average %>%
+  group_by(klaster) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>%
+  kbl(caption = "Średnie wartości cech dla obiektów należących do poszczególnych skupień wyznaczonych przez Algorytm AGNES - metoda average linkage",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+library(dplyr)
+dane_klastry_single <- as.data.frame(dane_stand)
+dane_klastry_single$klaster <- as.factor(dane.agnes.single.k2)
+
+dane_klastry_single %>%
+  group_by(klaster) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>%
+  kbl(caption = "Średnie wartości cech dla obiektów należących do poszczególnych skupień wyznaczonych przez Algorytm AGNES - metoda single linkage",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+library(dplyr)
+dane_klastry_complete <- as.data.frame(dane_stand)
+dane_klastry_complete$klaster <- as.factor(dane.agnes.complete.k2)
+
+dane_klastry_complete %>%
+  group_by(klaster) %>%
+  summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>%
+  kbl(caption = "Średnie wartości cech dla obiektów należących do poszczególnych skupień wyznaczonych przez Algorytm AGNES - metoda complete linkage",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+\newpage
+
+* **Wykresy pudełkowe**
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+library(ggplot2)
+library(tidyr)
+
+dane_klastry_pam_long <- dane_klastry_pam %>%
+  pivot_longer(cols = -klaster, names_to = "Zmienna", values_to = "Wartosc")
+
+ggplot(dane_klastry_pam_long, aes(x = klaster, y = Wartosc, fill = klaster)) +
+  geom_boxplot() +
+  facet_wrap(~Zmienna, scales = "free", ncol = 3) +
+  labs(title = "Wykresy pudełkowe dla skupień wyznaczonych przez algorytm PAM",
+       x = "Skupienie", y = "Wartość standaryzowana") +
+  theme_minimal()
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+dane_klastry_average_long <- dane_klastry_average %>%
+  pivot_longer(cols = -klaster, names_to = "Zmienna", values_to = "Wartosc")
+
+ggplot(dane_klastry_average_long, aes(x = klaster, y = Wartosc, fill = klaster)) +
+  geom_boxplot() +
+  facet_wrap(~Zmienna, scales = "free", ncol = 3) +
+  labs(title = "Wykresy pudełkowe dla skupień wyznaczonych przez algortym AGNES - \nmetoda average linkage",
+       x = "Skupienie", y = "Wartość standaryzowana") +
+  theme_minimal() 
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+dane_klastry_single_long <- dane_klastry_single %>%
+  pivot_longer(cols = -klaster, names_to = "Zmienna", values_to = "Wartosc")
+
+ggplot(dane_klastry_single_long, aes(x = klaster, y = Wartosc, fill = klaster)) +
+  geom_boxplot() +
+  facet_wrap(~Zmienna, scales = "free", ncol = 3) +
+  labs(title = "Wykresy pudełkowe dla skupień wyznaczonych przez algortym AGNES - \nmetoda single linkage",
+       x = "Skupienie", y = "Wartość standaryzowana") +
+  theme_minimal()
+```
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+dane_klastry_complete_long <- dane_klastry_complete %>%
+  pivot_longer(cols = -klaster, names_to = "Zmienna", values_to = "Wartosc")
+
+ggplot(dane_klastry_complete_long, aes(x = klaster, y = Wartosc, fill = klaster)) +
+  geom_boxplot() +
+  facet_wrap(~Zmienna, scales = "free", ncol = 3) +
+  labs(title = "Wykresy pudełkowe dla skupień wyznaczonych przez algortym AGNES  - \nmetoda complete linkage",
+       x = "Skupienie", y = "Wartość standaryzowana") +
+  theme_minimal()
+```
+Na podstawie powyższych wykresów i tabel można zauważyć, że skupienia PAM były bardziej spójne (mniejsze rozrzuty danych) w porównaniu do AGNES.
+
+\newpage
+
+* **Medoidy**
+
+W przypadku metody PAM, medoidami są obiekty `r dane.pam2$medoids`.
+
+```{r, echo= FALSE, message= FALSE, cache=TRUE}
+dane_sr_pam <- as.data.frame(dane_stand)
+dane_sr_pam$klaster <- as.factor(etykietki.pam2)
+
+medoidy <- dane.pam2$medoids
+medoid_cechy <- dane_sr_pam[medoidy, ] %>% select(-klaster)
+
+srednie <- dane_sr_pam %>%
+  group_by(klaster) %>%
+  summarise(across(where(is.numeric), mean))
+
+wyniki <- rbind(
+  `Medoid 1` = as.numeric(medoid_cechy[1, ]),
+  `Medoid 2` = as.numeric(medoid_cechy[2, ]),
+  `Średnia kl. 1` = as.numeric(srednie[1, -1]),
+  `Średnia kl. 2` = as.numeric(srednie[2, -1])
+)
+
+kbl(wyniki, format = "latex", digits = 2,
+    caption = "Medoidy oraz średnie wartości cech w klastrach (PAM)") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Na podstawie tabeli porównującej medoidy oraz średnie wartości cech w klastrach, można powiedzieć, że wybór medoidów jako reprezentantów skupień wydaje się trafny, gdyż dobrze oddają charakterystykę całych grup.
+
+
+

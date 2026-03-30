@@ -1,0 +1,471 @@
+---
+title: "Klasyfikacja przy użyciu regresji liniowej"
+author: "Mateusz Skuza"
+date: "2025-05-30"
+output: 
+  pdf_document: 
+    toc: true
+    number_sections: true
+    keep_tex: true
+    dev: cairo_pdf
+    latex_engine: xelatex
+lang: "pl"
+header-includes:
+   - \usepackage{graphicx}
+   - \usepackage{float}
+   - \usepackage{polyglossia}
+   - \setdefaultlanguage{polish}
+   - \renewcommand{\contentsname}{Spis treści}
+   - \usepackage{float}
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, fig.width = 8, cache=TRUE, echo = FALSE) 
+```
+
+
+# Wstęp 
+
+Wykorzystujemy zbiór danych `iris` z pakietu `datasets`, zawierający wyniki pomiarów uzyskanych dla trzech gatunków irysów (tj. `setosa`, `versicolor` i `virginica`), który został udostępniony przez Ronalda Fishera w roku 1936.
+Pomiary dotyczą długości oraz szerokości dwóch różnych części kwiatu – działki kielicha (`Sepal Length`, `Sepal Width`) oraz płatka (`Petal Length`, `Petal Width`). Pomiary zostały oznaczone skrótowo jako :
+
+  * `SL` (`Sepal Length`), 
+  * `SW` (`Sepal Width`),
+  * `PL` (`Petal Length`), 
+  * `PW` (`Petal Width`).
+
+Analizowane dane mają *K* = `r length(unique(iris$Species))` klasy, oraz *p* =  `r ncol(iris[, 1:4])` zmienne objaśniające,  tworzące wektor cech **X** = *(SL, SW, PL, PW)*.
+
+# Podział danych na zbiór uczący i testowy
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
+data(iris)
+
+#losowy podział danych na zbiór uczący i testowy
+set.seed(123)
+liczba_danych <- nrow(iris)
+indeksy_zbior_uczacy <- sample(1:liczba_danych, 5/6*liczba_danych)
+
+zbior_uczacy <- iris[indeksy_zbior_uczacy, ]
+
+zbior_testowy <- iris[-indeksy_zbior_uczacy, ]
+```
+
+Dane są losowo podzielone na część uczącą i testową w proporcji: 
+
+  * 5/6  - zbiór uczący,
+  * 1/6 - zbiór testowy.
+  
+Dzięki temu uzyskane zostały dwa niezależne podzbiory, które posłużą do analizy danych.
+
+# Konstrukcja klasyfikatora i wyznaczenie prognoz
+
+Do skonstruowania klasyfikatora oraz wyznaczenia prognoz zostały utworzone trzy oddzielne modele regresji liniowej, które przewidują przynależność w skali 0-1. Modele zostały utworzone przy użyciu funkcji `lm()`.  Za pomocą modeli wyznaczone zostały prawdopodobieństwa przynależności do każdej z klas obiektów ze zbiorów uczącego oraz testowego, przy czym dla każdego obiektu została przypisana klasa z najwyższym prawdopodobieństwem. Wyniki predykcji zostały zilustrowane na poniższych wykresach: 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
+
+# tworzenie zmiennych wskaźnikowe (0-1) dla klas w zbiorze uczącym
+Y1 <- as.numeric(zbior_uczacy$Species=="setosa")
+Y2 <- as.numeric(zbior_uczacy$Species=="versicolor")
+Y3 <- as.numeric(zbior_uczacy$Species=="virginica")
+
+irysy1 <- cbind(zbior_uczacy[,1:4],Y1)
+irysy2 <- cbind(zbior_uczacy[,1:4],Y2)
+irysy3 <- cbind(zbior_uczacy[,1:4],Y3)
+
+# dopasowanie K=3 niezależnych modeli regresji liniowej na zbiorze uczącym
+model1 <- lm(Y1~., data=irysy1)
+model2 <- lm(Y2~., data=irysy2)
+model3 <- lm(Y3~., data=irysy3)
+
+#prognozy prawdopodobieństwa dla zbioru uczącego
+pred1.lm  <- predict(model1, irysy1)
+pred2.lm  <- predict(model2, irysy2)
+pred3.lm  <- predict(model3, irysy3)
+
+# prognozowane etykietki klas dla zbioru uczącego
+pred <- rep(1, length(pred1.lm) )
+pred[pred2.lm > pmax(pred1.lm,pred3.lm)[1:length(pred2.lm)]] <- 2
+pred[pred3.lm > pmax(pred1.lm,pred2.lm)[1:length(pred3.lm)]] <- 3
+prognozy_ucz <- factor(pred, levels = 1:3, labels = levels(iris$Species))
+
+#prognozy prawdopodobieństwa dla zbioru testowego
+pred1_test.lm <- predict(model1, zbior_testowy[,1:4])
+pred2_test.lm <- predict(model2, zbior_testowy[,1:4])
+pred3_test.lm <- predict(model3, zbior_testowy[,1:4]) 
+
+# prognozowane etykietki klas dla zbioru testowego  
+pred_test <- rep(1, length(pred1_test.lm))
+pred_test[pred2_test.lm > pmax(pred1_test.lm, pred3_test.lm)[1:length(pred2_test.lm)]] <- 2
+pred_test[pred3_test.lm > pmax(pred1_test.lm, pred2_test.lm)[1:length(pred3_test.lm)]] <- 3
+prognozy_test <- factor(pred_test, levels = 1:3, labels = levels(iris$Species))
+
+dokladnosc_ucz <- mean(prognozy_ucz == zbior_uczacy$Species)  
+dokladnosc_test <- mean(prognozy_test == zbior_testowy$Species)
+
+par(mfrow = c(1, 2))
+
+# macierz prawdopodobienśtw dla zbioru uczącego
+Y.hat_ucz <- cbind(pred1.lm, pred2.lm, pred3.lm)
+
+# wykres dla zbioru uczącego
+matplot(Y.hat_ucz, main="Prognozy - zbiór uczący" ,xlab="id", ylab="Prawdopodobieństwo", ylim=c(-0.5,2))
+abline(v=c(50,100), lty=2, col="gray")
+
+# macierz prawdopodobienśtw dla zbioru testowego
+Y.hat_test <- cbind(pred1_test.lm, pred2_test.lm, pred3_test.lm)
+
+# wykres dla zbioru testowego
+matplot(Y.hat_test, main="Prognozy - zbiór testowy" ,xlab="id", ylab="Prawdopodobieństwo", ylim=c(-0.5,2))
+abline(v=c(50,100), lty=2, col="gray")
+legend(x="topright", legend=paste(1:3,levels(iris$Species)), col=1:3, text.col=1:3, bg="azure2")
+```
+Dokładność klasyfikacji wyniosła `r round(dokladnosc_ucz*100, 2)`% na zbiorze uczącym i `r round(dokladnosc_test*100, 2)`% na testowym, co pokazuje skuteczność klasyfikatora opartego na regresji liniowej.
+
+# Ocena jakości modelu
+
+## Macierz pomyłek
+
+Aby ocenić ile obiektów poszczególnych klas zostało przewidzianych przez klasyfikator poprawnie a ile błędnie, zostaną wykorzystane macierze pomyłek:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache = TRUE}
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+#macierz pomyłek dla zbioru uczącego 
+macierz_pomylek_ucz <- table(Rzeczywiste = zbior_uczacy$Species,  Prognozowane = prognozy_ucz)
+macierz_pomylek_ucz %>%
+  kbl(caption = "Macierz pomyłek dla zbioru uczącego",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+#błąd klasyfikacji dla zbioru uczącego 
+blad_klasyfikacji_ucz <- 1 - dokladnosc_ucz
+
+```
+Na podstawie macierzy pomyłek utworzonej dla zbioru uczącego widać, że:
+
+  * wszystkie 41 obiektów klasy `setosa` zostało poprawnie przewidzianych, 
+  * 25 obiektów klasy `versicolor` zostało poprawnie przewidzianych, natomiast 14 obiektów tej klasy zostało błędnie sklasyfikowane jako `virginica`, 
+  * 41 obiektów klasy `virginica` zostało poprawnie przewidzianych, natomiast 4 obiekty tej klasy zostały błędnie sklasyfikowane jako `versicolor`.
+  
+Błąd klasyfikacji dla zbioru uczącego wynosi `r round(blad_klasyfikacji_ucz*100, 2)`%.
+  
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+#macierz pomyłek dla zbioru testowego 
+macierz_pomylek_test <- table(Rzeczywiste = zbior_testowy$Species, Prognozowane = prognozy_test)
+macierz_pomylek_test %>%
+  kbl(caption = "Macierz pomyłek dla zbioru testowego",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+#błąd klasyfikacji dla zbioru testowego
+blad_klasyfikacji_test <- 1 - dokladnosc_test
+```
+Na podstawie macierzy pomyłek utworzonej dla zbioru testowego widać, że:
+
+  * wszystkie 9 obiektów klasy `setosa` zostało poprawnie przewidzianych, 
+  * 7 obiektów klasy `versicolor` zostało poprawnie przewidzianych, natomiast 4 obiekty tej klasy zostało błędnie sklasyfikowane jako `virginica`, 
+  * wszystkie 5 obiektów klasy `virginica` zostało poprawnie przewidzianych.
+  
+  
+Błąd klasyfikacji dla zbioru testowego wynosi `r round(blad_klasyfikacji_test*100, 2)`%.
+
+## Zjawisko maskowania klas
+
+W celu zbadania występowania zjawiska maskowania klas zostały utworzone wykresy przedstawiające wyniki klasyfikacji na zbiorze uczącym i testowym, na którym kolor punktów zależy od gatunku irysa, natomiast kształt wskazuje na to czy klasyfikacja była poprawna (kółko), czy błędna (krzyżyk).
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE,  fig.height=4.5, fig.width=10}
+library(ggplot2)
+library(gridExtra)
+
+zbior_uczacy$Poprawnosc_klasyfikacji <- zbior_uczacy$Species==prognozy_ucz
+
+kolory <- c("black", "red", "green")
+
+p1 <- ggplot(zbior_uczacy, aes(x = Sepal.Length, y = Sepal.Width)) +
+  geom_point(aes(color = Species, shape = Poprawnosc_klasyfikacji), size = 3, alpha = 0.85) +
+  scale_shape_manual(values = c(4, 1)) +
+  scale_color_manual(values = kolory) + 
+  labs(
+    title = "Zjawisko maskowania klas \nna zbiorze uczącym",
+    color = "Gatunek",
+    shape = "Poprawna klasyfikacja"
+  ) +
+  theme_minimal()   +
+  theme(
+    legend.position = "left",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+
+zbior_testowy$Poprawnosc_klasyfikacji <- zbior_testowy$Species==prognozy_test
+
+p2 <- ggplot(zbior_testowy, aes(x = Sepal.Length, y = Sepal.Width)) +
+  geom_point(aes(color = Species, shape = Poprawnosc_klasyfikacji), size = 3, alpha = 0.85) +
+  scale_shape_manual(values = c(4, 1)) +
+  scale_color_manual(values = kolory) + 
+  labs(
+    title = "Zjawisko maskowania klas \nna zbiorze testowym",
+    color = "Gatunek",
+    shape = "Poprawna klasyfikacja"
+  ) +
+  theme_minimal()+
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+
+grid.arrange(p1, p2, ncol = 2, widths = c(8, 6)) 
+```
+
+Na podstawie wykresów, nie widać sytuacji w której jedna z klas jest całkowicie maskowana, `setosa` jest poprawnie sklasyfikowana w obydwu zbiorach, natomiast błędne klasyfikacje pojawiają się przy obszarach, na których znajdują się `versicolor` oraz `virginica`, co można interpretować jako zjawisko częściowego maskowania.
+
+# Budowa modelu liniowego dla rozszerzonej przestrzeni cech
+
+## Rozszerzenie przestrzeni cech
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
+
+zbior_uczacy <- zbior_uczacy %>%
+  rename(SL = Sepal.Length,
+         SW = Sepal.Width,
+         PL = Petal.Length,
+         PW = Petal.Width)
+
+zbior_uczacy$PL2 <- zbior_uczacy$PL^2
+zbior_uczacy$PW2 <- zbior_uczacy$PW^2
+zbior_uczacy$SL2 <- zbior_uczacy$SL^2
+zbior_uczacy$SW2 <- zbior_uczacy$SW^2
+zbior_uczacy$PL_PW <- zbior_uczacy$PL * zbior_uczacy$PW
+zbior_uczacy$PL_SW <- zbior_uczacy$PL * zbior_uczacy$SW
+zbior_uczacy$PL_SL <- zbior_uczacy$PL * zbior_uczacy$SL
+zbior_uczacy$PW_SL <- zbior_uczacy$PW * zbior_uczacy$SL
+zbior_uczacy$PW_SW <- zbior_uczacy$PW * zbior_uczacy$SW
+zbior_uczacy$SL_SW <- zbior_uczacy$SL * zbior_uczacy$SW
+
+zbior_testowy <- zbior_testowy %>%
+  rename(SL = Sepal.Length,
+         SW = Sepal.Width,
+         PL = Petal.Length,
+         PW = Petal.Width)
+
+zbior_testowy$PL2 <- zbior_testowy$PL^2
+zbior_testowy$PW2 <- zbior_testowy$PW^2
+zbior_testowy$SL2 <- zbior_testowy$SL^2
+zbior_testowy$SW2 <- zbior_testowy$SW^2
+zbior_testowy$PL_PW <- zbior_testowy$PL * zbior_testowy$PW
+zbior_testowy$PL_SW <- zbior_testowy$PL * zbior_testowy$SW
+zbior_testowy$PL_SL <- zbior_testowy$PL * zbior_testowy$SL
+zbior_testowy$PW_SL <- zbior_testowy$PW * zbior_testowy$SL
+zbior_testowy$PW_SW <- zbior_testowy$PW * zbior_testowy$SW
+zbior_testowy$SL_SW <- zbior_testowy$SL * zbior_testowy$SW
+```
+
+W celu poprawy jakości klasyfikacji, do przestrzeni cech zostały dodane dodatkowe zmienne, będące składnikami wielomianowymi stopnia drugiego. Są to kwadraty każdej z cech *(SL, SW, PL, PW)* oraz wszystkie możliwe iloczyny par różnych cech.
+
+## Konstrukcja klasyfikatora i wyznaczenie prognoz
+
+Po rozszerzeniu przestrzeni cech w analogiczny sposób jak wcześniej został skonstruowany klasyfikator oraz zostały wyznaczone prognozy. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
+
+# tworzenie zmiennych wskaźnikowe (0-1) dla klas w zbiorze uczącym
+Y1 <- as.numeric(zbior_uczacy$Species=="setosa")
+Y2 <- as.numeric(zbior_uczacy$Species=="versicolor")
+Y3 <- as.numeric(zbior_uczacy$Species=="virginica")
+
+irysy1kw <- cbind(zbior_uczacy[,-5],Y1)
+irysy2kw <- cbind(zbior_uczacy[,-5],Y2)
+irysy3kw <- cbind(zbior_uczacy[,-5],Y3)
+
+# dopasowanie K=3 niezależnych modeli regresji liniowej na zbiorze uczącym
+model1kw <- lm(Y1~., data=irysy1kw)
+model2kw <- lm(Y2~., data=irysy2kw)
+model3kw <- lm(Y3~., data=irysy3kw)
+
+#prognozy prawdopodobieństwa dla zbioru uczącego
+pred1kw.lm  <- predict(model1kw, irysy1kw)
+pred2kw.lm  <- predict(model2kw, irysy2kw)
+pred3kw.lm  <- predict(model3kw, irysy3kw)
+
+# prognozowane etykietki klas dla zbioru uczącego
+predkw <- rep(1, length(pred1.lm) )
+predkw[pred2kw.lm > pmax(pred1kw.lm,pred3kw.lm)[1:length(pred2kw.lm)]] <- 2
+predkw[pred3kw.lm > pmax(pred1kw.lm,pred2kw.lm)[1:length(pred3kw.lm)]] <- 3
+prognozy_uczkw <- factor(predkw, levels = 1:3, labels = levels(iris$Species))
+
+#prognozy prawdopodobieństwa dla zbioru testowego
+pred1kw_test.lm <- predict(model1kw, zbior_testowy[, -5])
+pred2kw_test.lm <- predict(model2kw, zbior_testowy[, -5])
+pred3kw_test.lm <- predict(model3kw, zbior_testowy[, -5]) 
+
+# prognozowane etykietki klas dla zbioru testowego  
+predkw_test <- rep(1, length(pred1kw_test.lm))
+predkw_test[pred2kw_test.lm > pmax(pred1kw_test.lm, pred3kw_test.lm)[1:length(pred2kw_test.lm)]] <- 2
+predkw_test[pred3kw_test.lm > pmax(pred1kw_test.lm, pred2kw_test.lm)[1:length(pred3kw_test.lm)]] <- 3
+prognozy_testkw <- factor(predkw_test, levels = 1:3, labels = levels(iris$Species))
+
+dokladnosc_uczkw <- mean(prognozy_uczkw == zbior_uczacy$Species)  
+dokladnosc_testkw <- mean(prognozy_testkw == zbior_testowy$Species)
+
+par(mfrow = c(1, 2))
+
+# macierz prawdopodobienstw dla zbioru uczącego
+Y.hat_uczkw <- cbind(pred1kw.lm, pred2kw.lm, pred3kw.lm)
+
+# wykres dla zbioru uczącego
+matplot(Y.hat_uczkw, main="Prognozy - zbiór uczący" ,xlab="id", ylab="Prawdopodobieństwo", ylim=c(-0.5,2))
+abline(v=c(50,100), lty=2, col="gray")
+
+# macierz prawdopodobienśtw dla zbioru testowego
+Y.hat_testkw <- cbind(pred1kw_test.lm, pred2kw_test.lm, pred3kw_test.lm)
+
+# wykres dla zbioru testowego
+matplot(Y.hat_testkw, main="Prognozy - zbiór testowy" ,xlab="id", ylab="Prawdopodobieństwo", ylim=c(-0.5,2))
+abline(v=c(50,100), lty=2, col="gray")
+legend(x="topright", legend=paste(1:3,levels(iris$Species)), col=1:3, text.col=1:3, bg="azure2")
+```
+Dokładności klasyfikacji obu modeli na zbiorze uczącym i testowym przedstawia tabela poniżej : 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
+tabela_dokladnosci <- data.frame(
+  Model = c("Podstawowy", "Rozszerzony"),
+  `Zbiór Uczący` = round(c(dokladnosc_ucz, dokladnosc_uczkw), 2),
+  `Zbiór Testowy` = round(c(dokladnosc_test, dokladnosc_testkw), 2))
+
+tabela_dokladnosci %>%
+  kbl(caption = "Tabela dokładności klasyfikacji modeli na zbiorach",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+```
+
+Na podstawie tabeli widać, że rozszerzenie przestrzeni cech zwiększyło dokładność klasyfikacji zarówno na zbiorze uczącym, jak i na zbiorze testowym.
+
+## Ocena jakości modelu
+
+### Macierz pomyłek
+
+
+  Aby ocenić ile obiektów poszczególnych klas zostało przewidzianych przez klasyfikator poprawnie a ile błędnie, zostaną wykorzystane macierze pomyłek:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache = TRUE}
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+#macierz pomyłek dla zbioru uczącego 
+macierz_pomylek_uczkw <- table(Rzeczywiste = zbior_uczacy$Species,  Prognozowane = prognozy_uczkw)
+macierz_pomylek_uczkw %>%
+  kbl(caption = "Macierz pomyłek dla zbioru uczącego",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+#błąd klasyfikacji dla zbioru uczącego 
+blad_klasyfikacji_uczkw <- 1 - dokladnosc_uczkw
+
+```
+
+Na podstawie macierzy pomyłek utworzonej dla zbioru uczącego widać, że:
+
+  * wszystkie 41 obiektów klasy `setosa` zostało poprawnie przewidzianych, 
+  * 38 obiektów klasy `versicolor` zostało poprawnie przewidzianych, natomiast 1 obiekt tej klasy zostało błędnie sklasyfikowane jako `virginica`, 
+  * 43 obiekty klasy `virginica` zostało poprawnie przewidzianych, natomiast 2 obiekty tej klasy zostały błędnie sklasyfikowane jako `versicolor`.
+  
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+#macierz pomyłek dla zbioru testowego 
+macierz_pomylek_testkw <- table(Rzeczywiste = zbior_testowy$Species, Prognozowane = prognozy_testkw)
+macierz_pomylek_testkw %>%
+  kbl(caption = "Macierz pomyłek dla zbioru testowego",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+#błąd klasyfikacji dla zbioru testowego
+blad_klasyfikacji_testkw <- 1 - dokladnosc_testkw
+```
+ 
+Na podstawie macierzy pomyłek utworzonej dla zbioru uczącego widać, że wszystkie obiekty zostały poprawnie przewidziane do swoich klas.
+
+Błędy klasyfikacji obu modeli na zbiorze uczącym i testowym przedstawia tabela poniżej : 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE}
+tabela_blad <- data.frame(
+  Model = c("Podstawowy", "Rozszerzony"),
+  `Zbiór Uczący` = round(c(blad_klasyfikacji_ucz, blad_klasyfikacji_uczkw), 2),
+  `Zbiór Testowy` = round(c(blad_klasyfikacji_test, blad_klasyfikacji_testkw), 2))
+
+tabela_blad %>%
+  kbl(caption = "Tabela błędów klasyfikacji modeli na zbiorach",
+      format = "latex", digits = 2) %>%
+  kable_styling(latex_options = "HOLD_position")
+
+```
+
+Na podstawie tabeli widać, że rozszerzenie przestrzeni cech zmniejszyło rozmiar błędu klasyfikacji zarówno na zbiorze uczącym, jak i na zbiorze testowym.
+
+### Zjawisko maskowania klas
+
+W celu zbadania występowania zjawiska maskowania klas zostały ponownie utworzone wykresy przedstawiające wyniki klasyfikacji na zbiorze uczącym i testowym. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE,  fig.height=4.5, fig.width=10}
+library(ggplot2)
+library(gridExtra)
+
+zbior_uczacy$Poprawnosc_klasyfikacjikw <- zbior_uczacy$Species==prognozy_uczkw
+
+kolory <- c("black", "red", "green")
+
+p3 <- ggplot(zbior_uczacy, aes(x = SL, y = SW)) +
+  geom_point(aes(color = Species, shape = Poprawnosc_klasyfikacjikw), size = 3, alpha = 0.85) +
+  scale_shape_manual(values = c(4, 1)) +
+  scale_color_manual(values = kolory) + 
+  labs(
+    title = "Zjawisko maskowania klas \nna zbiorze uczącym",
+    color = "Gatunek",
+    shape = "Poprawna klasyfikacja"
+  ) +
+  theme_minimal()   +
+  theme(
+    legend.position = "left",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+
+zbior_testowy$Poprawnosc_klasyfikacjikw <- zbior_testowy$Species==prognozy_testkw
+
+p4 <- ggplot(zbior_testowy, aes(x = SL, y = SW)) +
+  geom_point(aes(color = Species, shape = Poprawnosc_klasyfikacjikw), size = 3, alpha = 0.85) +
+  scale_shape_manual(values = c(1, 4)) +
+  scale_color_manual(values = kolory) + 
+  labs(
+    title = "Zjawisko maskowania klas \nna zbiorze testowym",
+    color = "Gatunek",
+    shape = "Poprawna klasyfikacja"
+  ) +
+  theme_minimal()+
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+
+grid.arrange(p3, p4, ncol = 2, widths = c(8, 6)) 
+```
+Na podstawie wykresów, nie widać sytuacji w której jedna z klas jest całkowicie maskowana, na zbiorze uczącym `setosa` jest poprawnie sklasyfikowana, błędne klasyfikacje pojawiają się przy obszarach, na których znajdują się `versicolor` oraz `virginica`, co można interpretować jako zjawisko częściowego maskowania, natomiast na zbiorze testowym nie występuje zjawisko maskowania.
+
+## Wniosek
+
+Rozszerzenie przestrzeni cech istotnie wpłynęło na poprawę skuteczności klasyfikatora. Wzbogacenie modelu liniowego o cechy wielomianowe drugiego rzędu pozwoliło lepiej odwzorować nieliniowe relacje między zmiennymi, co zaowocowało znacznym wzrostem dokładności oraz niemal całkowitym wyeliminowaniem błędów klasyfikacji. Szczególnie zauważalna poprawa dotyczyła rozróżniania gatunków `versicolor` i `virginica`, które wcześniej sprawiały trudności. Przedstawione wykresy pokazują, że granice decyzyjne stały się bardziej przejrzyste, a przypisania do klas – dużo bardziej precyzyjne.
+
